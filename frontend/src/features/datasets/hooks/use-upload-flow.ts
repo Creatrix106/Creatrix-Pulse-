@@ -9,7 +9,6 @@ import { getErrorMessage } from "@/services/api-client";
 import { toast } from "@/stores/toast.store";
 import type { CanonicalField, ColumnMapping, DatasetProfile, ValidationIssue } from "@/types/dataset";
 import { fileKindFromName, profileCsv, suggestMapping, validateUpload } from "@/utils/dataset-profile";
-import { createSampleFile } from "../sample-data";
 
 export type UploadStage = "select" | "reading" | "review" | "uploading";
 
@@ -116,7 +115,6 @@ export function useUploadFlow(replaceDatasetId?: string) {
     percent,
     uploadError: upload.isError ? getErrorMessage(upload.error) : undefined,
     selectFile,
-    loadSample: () => void selectFile(createSampleFile()),
     setMappingField,
     submit,
     reset,

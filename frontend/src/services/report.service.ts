@@ -1,7 +1,5 @@
-import { env } from "@/config/env";
 import type { ReportConfig, ReportPreview, ReportRecord } from "@/types/report";
 import { apiClient } from "./api-client";
-import { mockReportService } from "./mock/reports.mock";
 
 /**
  * BACKEND INTEGRATION POINT – reports
@@ -23,4 +21,4 @@ const httpReportService: ReportService = {
   create: (id, config) => apiClient.post<ReportRecord>(base(id), config),
 };
 
-export const reportService: ReportService = env.useMocks ? mockReportService : httpReportService;
+export const reportService: ReportService = httpReportService;

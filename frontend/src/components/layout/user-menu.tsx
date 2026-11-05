@@ -5,13 +5,12 @@ import { useRouter } from "next/navigation";
 import { LogIn, LogOut, Settings } from "lucide-react";
 import { Popover } from "@/components/ui/popover";
 import { getDashboardHref } from "@/config/navigation";
-import { siteConfig } from "@/config/site";
 import { useLogout } from "@/hooks/use-auth";
 import { useAuthStore } from "@/stores/auth.store";
 
 const itemStyles = "flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-foreground hover:bg-surface-accent";
 
-export function UserMenu({ datasetId = siteConfig.defaultDatasetId }: { datasetId?: string }) {
+export function UserMenu({ datasetId }: { datasetId?: string }) {
   const user = useAuthStore((s) => s.user);
   const router = useRouter();
   const logout = useLogout();
@@ -41,16 +40,16 @@ export function UserMenu({ datasetId = siteConfig.defaultDatasetId }: { datasetI
             <p className="truncate text-xs text-muted">{user?.email ?? "Not signed in"}</p>
           </div>
           <div className="pt-1">
-            <Link href={getDashboardHref(datasetId, "settings")} onClick={close} className={itemStyles}>
+            {datasetId && <Link href={getDashboardHref(datasetId, "settings")} onClick={close} className={itemStyles}>
               <Settings className="size-4" aria-hidden /> Settings
-            </Link>
+            </Link>}
             {user ? (
               <button
                 type="button"
                 className={itemStyles}
                 onClick={() => {
                   close();
-                  logout.mutate(undefined, { onSettled: () => router.push("/login") });
+                  logout.mutate(undefined, { onSuccess: () => router.push("/login") });
                 }}
               >
                 <LogOut className="size-4" aria-hidden /> Sign out

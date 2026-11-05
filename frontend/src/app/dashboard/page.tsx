@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation";
-import { siteConfig } from "@/config/site";
+import { DashboardIndexView } from "@/features/datasets/dashboard-index-view";
 
-/** /dashboard has no content of its own – open the default dataset. */
 export default function DashboardIndexPage() {
-  redirect(`/dashboard/${siteConfig.defaultDatasetId}`);
+  return <DashboardIndexView />;
 }

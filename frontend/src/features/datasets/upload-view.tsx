@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, FlaskConical, RefreshCw, X } from "lucide-react";
+import { FileSpreadsheet, RefreshCw, X } from "lucide-react";
 import { InlineError } from "@/components/feedback/inline-error";
 import { Button } from "@/components/ui/button";
 import { Card, CardHeader } from "@/components/ui/card";
@@ -43,15 +43,6 @@ export function UploadView({ replaceDatasetId }: { replaceDatasetId?: string }) 
       {(flow.stage === "select" || flow.stage === "reading") && (
         <>
           <FileUploadDropzone onFile={flow.selectFile} loading={flow.stage === "reading"} error={flow.fileError} />
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-surface p-4">
-            <div>
-              <p className="text-sm font-semibold text-emphasis">No file handy?</p>
-              <p className="text-sm text-muted">Try the flow with a small sample retail dataset.</p>
-            </div>
-            <Button variant="secondary" onClick={flow.loadSample} disabled={flow.stage === "reading"}>
-              <FlaskConical className="size-4" aria-hidden /> Use sample dataset
-            </Button>
-          </div>
           <Card className="p-5">
             <CardHeader title="Before you upload" />
             <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-muted">
