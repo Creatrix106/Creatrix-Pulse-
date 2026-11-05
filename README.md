@@ -260,4 +260,4 @@ TEST SUMMARY: 26 passed, 0 failed in 0.62s
 
 ## License
 
-This project is licensed under the [MIT License](https://www.google.com/search?q=LICENSE).
+This project is licensed under the [Apache 2.0 License](https://www.google.com/search?q=LICENSE).
