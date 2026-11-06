@@ -228,7 +228,7 @@ Test suite executes 26 comprehensive automated test cases covering authenticatio
 | --- | --- |
 | **Frontend** | Next.js 14+ (App Router), React, TypeScript, TanStack Query v5, Zustand, Recharts, Tailwind CSS |
 | **Backend API** | FastAPI (Python 3.11+), Uvicorn (ASGI) |
-| **Data Validation** | Pydantic v2 (Strict contract alignment with frontend schemas) |
+| **Data Validation** | Pydantic v1 (Strict contract alignment with frontend schemas) |
 | **Relational Database** | PostgreSQL 15+, SQLAlchemy 2.0 (`asyncpg`), Alembic |
 | **Analytics Core** | Pandas, Apache Parquet (PyArrow, FastParquet), NumPy |
 | **Reporting & Exports** | ReportLab (PDF), OpenPyXL (Excel), CSV, JSON |
