@@ -26,7 +26,5 @@ export interface ReportRecord {
   createdAt: string;
   rowCount: number;
   sizeBytes: number;
-  /** Mock mode stores the content locally. A real backend would expose a download URL instead. */
-  content?: string;
-  downloadUrl?: string;
+  downloadUrl: string;
 }

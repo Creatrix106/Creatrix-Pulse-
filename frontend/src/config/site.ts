@@ -3,8 +3,6 @@ export const siteConfig = {
   tagline: "Turn Your Data Into Your Next Move.",
   description:
     "Transform raw business data into meaningful insights, discover performance trends, and make smarter decisions with Creatrix Pulse.",
-  /** Dataset opened by default after login when the user already has data. */
-  defaultDatasetId: "demo-retail",
 } as const;
 
 export const marketingNav = [

@@ -21,14 +21,22 @@ import { toast } from "@/stores/toast.store";
 import type { MetricKey, DatePreset } from "@/types/filters";
 import type { ReportConfig, ReportFormat, ReportRecord } from "@/types/report";
 import { formatBytes, formatDateTime } from "@/utils/format";
-import { downloadTextFile, slugify } from "@/utils/download";
+import { slugify } from "@/utils/download";
+import { apiClient } from "@/services/api-client";
 
 function download(record: ReportRecord) {
-  if (!record.content) {
-    toast.error("Download unavailable", "This report has no downloadable content.");
+  if (!record.downloadUrl) {
+    toast.error("Download unavailable", "The server did not provide a download link for this report.");
     return;
   }
-  downloadTextFile(`${slugify(record.title)}.${record.format}`, record.content, record.format === "csv" ? "text/csv" : "application/json");
+  const link = document.createElement("a");
+  link.href = apiClient.resolveUrl(record.downloadUrl);
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.download = `${slugify(record.title)}.${record.format}`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
 }
 
 export function ReportsView() {

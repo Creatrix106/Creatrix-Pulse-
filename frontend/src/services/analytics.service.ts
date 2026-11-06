@@ -1,4 +1,3 @@
-import { env } from "@/config/env";
 import type {
   CustomersResponse,
   ExplorerData,
@@ -10,7 +9,6 @@ import type {
 import type { AnalyticsFilters } from "@/types/filters";
 import type { Insight } from "@/types/insight";
 import { apiClient } from "./api-client";
-import { mockAnalyticsService } from "./mock/analytics.mock";
 
 /**
  * BACKEND INTEGRATION POINT – analytics
@@ -59,4 +57,4 @@ const httpAnalyticsService: AnalyticsService = {
   getExplorerData: (id) => apiClient.get<ExplorerData>(`${base(id)}/records`),
 };
 
-export const analyticsService: AnalyticsService = env.useMocks ? mockAnalyticsService : httpAnalyticsService;
+export const analyticsService: AnalyticsService = httpAnalyticsService;

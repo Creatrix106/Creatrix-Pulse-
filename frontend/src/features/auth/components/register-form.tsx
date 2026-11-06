@@ -21,7 +21,7 @@ export function RegisterForm() {
     <form
       noValidate
       className="space-y-5"
-      onSubmit={handleSubmit(({ name, email, password }) => signUp.mutate({ name, email, password }, { onSuccess: () => router.push("/upload") }))}
+      onSubmit={handleSubmit(({ name, email, password }) => signUp.mutate({ name, email, password }, { onSuccess: () => router.push("/dashboard") }))}
     >
       {signUp.isError && <InlineError message={getErrorMessage(signUp.error)} />}
       <FormField label="Full name" htmlFor="name" error={errors.name?.message}>

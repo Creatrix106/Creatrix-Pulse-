@@ -4,9 +4,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ToastViewport } from "@/components/feedback/toast";
 import { isApiError } from "@/services/api-client";
-import { useAuthStore } from "@/stores/auth.store";
 import { usePreferencesStore } from "@/stores/preferences.store";
 import { useThemeStore } from "@/stores/theme.store";
+import { useCurrentUser } from "@/hooks/use-auth";
 
 function createQueryClient() {
   return new QueryClient({
@@ -26,8 +26,12 @@ function StoreHydrator() {
   useEffect(() => {
     void useThemeStore.persist.rehydrate();
     void usePreferencesStore.persist.rehydrate();
-    void useAuthStore.persist.rehydrate();
   }, []);
+  return null;
+}
+
+function AuthSession() {
+  useCurrentUser();
   return null;
 }
 
@@ -58,6 +62,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <StoreHydrator />
       <ThemeSync />
+      <AuthSession />
       {children}
       <ToastViewport />
     </QueryClientProvider>

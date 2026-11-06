@@ -18,7 +18,7 @@ export function LoginForm() {
   const { register, handleSubmit, formState: { errors } } = useForm<LoginValues>({ resolver: zodResolver(loginSchema) });
 
   return (
-    <form noValidate className="space-y-5" onSubmit={handleSubmit((values) => login.mutate(values, { onSuccess: () => router.push("/upload") }))}>
+    <form noValidate className="space-y-5" onSubmit={handleSubmit((values) => login.mutate(values, { onSuccess: () => router.push("/dashboard") }))}>
       {login.isError && <InlineError message={getErrorMessage(login.error)} />}
       <FormField label="Email" htmlFor="email" error={errors.email?.message}>
         <Input id="email" type="email" autoComplete="email" placeholder="you@company.com" aria-invalid={!!errors.email} aria-describedby={errors.email ? "email-error" : undefined} {...register("email")} />

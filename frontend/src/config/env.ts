@@ -3,9 +3,7 @@
  * location is defined; never hardcode URLs elsewhere.
  *
  *   NEXT_PUBLIC_API_BASE_URL  – backend root, e.g. https://api.creatrix.app/v1
- *   NEXT_PUBLIC_USE_MOCKS     – "false" switches every service to the real HTTP implementation
  */
 export const env = {
-  apiBaseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api").replace(/\/$/, ""),
-  useMocks: process.env.NEXT_PUBLIC_USE_MOCKS !== "false",
+  apiBaseUrl: (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api/v1").replace(/\/$/, ""),
 } as const;
