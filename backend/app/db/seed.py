@@ -147,7 +147,16 @@ def generate_deterministic_rows(seed_key: str, caps: Dict[str, bool]) -> List[Di
 
     return rows
 
-async def seed_all():
+SEED_MARKER = settings.DATA_DIR / ".demo_seeded"
+
+
+async def seed_all(force: bool = False):
+    """Create the demo admin and demo datasets.
+
+    Demo datasets are only created on the first run (tracked by a marker file); otherwise a
+    demo dataset the user deleted in the UI would reappear on every restart.
+    Pass force=True (or `python -m app.db.seed --force`) to restore any missing demo dataset.
+    """
     print("Initializing Database...")
     await db.init_db()
 
@@ -162,6 +171,10 @@ async def seed_all():
             "hashed_password": hash_password("password123"),
             "role": "admin"
         })
+
+    if SEED_MARKER.exists() and not force:
+        print("Demo data already seeded (use --force to restore deleted demo datasets).")
+        return
 
     # 2. Seed Demo Datasets
     seeds_config = [
@@ -293,7 +306,9 @@ async def seed_all():
         await db.create_dataset(d_record)
         await db.insert_rows(item["id"], rows)
 
+    SEED_MARKER.write_text(datetime.datetime.utcnow().isoformat() + "Z")
     print("Seed complete successfully!")
 
 if __name__ == "__main__":
-    asyncio.run(seed_all())
+    import sys
+    asyncio.run(seed_all(force="--force" in sys.argv))

@@ -1,10 +1,14 @@
 import asyncio
 import json
+import logging
 import sqlite3
-import os
-from typing import Dict, Any, List, Optional
+from contextlib import contextmanager
+from typing import Dict, Any, Iterator, List, Optional
 from pathlib import Path
 from app.config import settings
+
+logger = logging.getLogger("creatrix.db")
+
 
 class Database:
     def __init__(self, db_url: str):
@@ -12,23 +16,48 @@ class Database:
         if db_url.startswith("sqlite:///"):
             self.db_path = db_url.replace("sqlite:///", "")
             Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
-            self.is_sqlite = True
         else:
+            # The running app only has a SQLite repository. The PostgreSQL models/migrations
+            # are scaffolding that is not wired to the API yet - say so instead of hiding it.
             self.db_path = str(settings.DATA_DIR / "creatrix_pulse.db")
-            self.is_sqlite = True
+            logger.warning(
+                "DATABASE_URL=%s is not a sqlite:/// URL; the API only supports SQLite at runtime, "
+                "so %s is being used instead.", db_url.split("@")[-1], self.db_path,
+            )
+        self.is_sqlite = True
 
-    def _get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path, check_same_thread=False)
+    @contextmanager
+    def _get_connection(self) -> Iterator[sqlite3.Connection]:
+        """Commit on success, roll back on error and ALWAYS close.
+        (`with sqlite3.connect()` alone commits but never closes, leaking a connection per call.)"""
+        conn = sqlite3.connect(self.db_path, timeout=30, check_same_thread=False)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA foreign_keys = ON;")
-        conn.execute("PRAGMA journal_mode = WAL;")
-        return conn
+        try:
+            conn.execute("PRAGMA foreign_keys = ON;")
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
 
     async def init_db(self):
         await asyncio.to_thread(self._init_db_sync)
 
+    async def ping(self) -> bool:
+        def _ping() -> bool:
+            with self._get_connection() as conn:
+                conn.execute("SELECT 1")
+            return True
+        try:
+            return await asyncio.to_thread(_ping)
+        except Exception:
+            return False
+
     def _init_db_sync(self):
         with self._get_connection() as conn:
+            conn.execute("PRAGMA journal_mode = WAL;")  # persistent; readers no longer block the writer
             cur = conn.cursor()
             # Users
             cur.execute("""

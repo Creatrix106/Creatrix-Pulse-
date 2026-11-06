@@ -85,6 +85,16 @@ def run_all_tests():
                 traceback.print_exc()
                 total_failed += 1
 
+    print("\n--- Regression suite (CORS, cookies, uploads, explorer, reports) ---")
+    import pytest
+    reg_rc = pytest.main([str(Path(__file__).resolve().parent / "tests" / "test_regressions.py"), "-q", "-p", "no:cacheprovider"])
+    if reg_rc != 0:
+        total_failed += 1
+        print("  [FAIL] Regression suite (see pytest output above)")
+    else:
+        total_passed += 1
+        print("  [PASS] Regression suite")
+
     elapsed = time.time() - start_time
     print("\n" + "=" * 60)
     print(f"TEST SUMMARY: {total_passed} passed, {total_failed} failed in {elapsed:.2f}s")

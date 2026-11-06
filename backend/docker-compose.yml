@@ -1,7 +1,29 @@
-version: '3.8'
-
+# `docker compose up` starts the API only. The API stores everything in SQLite + parquet files under
+# ./data (mounted below), which is what the application actually uses today.
+#
+# The PostgreSQL / Redis / worker services are scaffolding for a future migration and are NOT used
+# by the API yet; they only start with:  docker compose --profile postgres up
 services:
+  api:
+    build: .
+    container_name: creatrix-pulse-api
+    restart: always
+    environment:
+      # CHANGE THIS before deploying. Generate one with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - SECRET_KEY=${SECRET_KEY:-change-me-before-deploying}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # Demo mode serves requests without a session as the demo admin. Set to false for production.
+      - ALLOW_ANONYMOUS_DEMO=${ALLOW_ANONYMOUS_DEMO:-true}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    command: >
+      sh -c "python -m app.db.seed &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+
   db:
+    profiles: ["postgres"]
     image: postgres:15-alpine
     container_name: creatrix-pulse-postgres
     restart: always
@@ -21,6 +43,7 @@ services:
       retries: 5
 
   redis:
+    profiles: ["postgres"]
     image: redis:7-alpine
     container_name: creatrix-pulse-redis
     restart: always
@@ -33,46 +56,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  api:
-    build: .
-    container_name: creatrix-pulse-api
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@db:5432/creatrix_pulse
-      - SECRET_KEY=creatrix-pulse-super-secret-jwt-production-key-2026
-      - REDIS_URL=redis://redis:6379/0
-      - CORS_ORIGINS=["http://localhost:3000","http://127.0.0.1:3000"]
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./data:/app/data
-    command: >
-      sh -c "alembic upgrade head &&
-             python -m app.db.seed &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
-
-  worker:
-    build: .
-    container_name: creatrix-pulse-celery
-    restart: always
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    environment:
-      - DATABASE_URL=postgresql+asyncpg://postgres:postgrespassword@db:5432/creatrix_pulse
-      - REDIS_URL=redis://redis:6379/0
-    volumes:
-      - ./data:/app/data
-    command: >
-      sh -c "echo 'Celery worker ready for background ingestion & PDF compilation'"
 
 volumes:
   postgres_data:

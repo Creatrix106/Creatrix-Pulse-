@@ -26,7 +26,14 @@ from app.schemas.analytics import (
     FrequencyBin,
     CategoryTrendPoint,
 )
+from app.services.errors import DatasetNotFoundError
 from app.services.insights_service import InsightsService, pct_change
+
+DATA_COLUMNS = [
+    "order_id", "transaction_date", "product_id", "product_name", "product_category",
+    "region", "customer_identifier", "quantity", "unit_price", "revenue", "cost",
+]
+
 
 def add_days(iso_date: str, n: int) -> str:
     dt = datetime.datetime.strptime(iso_date[:10], "%Y-%m-%d") + datetime.timedelta(days=n)
@@ -47,37 +54,58 @@ def bucket_key(date_str: str, group_by: GroupBy) -> str:
     monday = dt - datetime.timedelta(days=dt.weekday())
     return monday.strftime("%Y-%m-%d")
 
+def bucket_series(dates: pd.Series, group_by: GroupBy) -> pd.Series:
+    """bucket_key() over a column, evaluated once per *distinct* date (a year of daily data has
+    ~365 of them) instead of once per row."""
+    mapping = {d: bucket_key(d, group_by) for d in dates.dropna().unique()}
+    return dates.map(mapping)
+
+
+# Explorer keys (what the frontend sees) -> internal dataframe columns.
+EXPLORER_SORT_COLUMNS = {
+    "orderId": "order_id", "date": "transaction_date", "product": "product_name",
+    "category": "product_category", "region": "region", "customerId": "customer_identifier",
+    "quantity": "quantity", "unitPrice": "unit_price", "revenue": "revenue", "cost": "cost",
+}
+
+
 class AnalyticsService:
     @classmethod
     async def load_dataframe(cls, dataset_id: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
         dataset = await db.get_dataset(dataset_id)
         if not dataset:
-            raise KeyError(f"Dataset {dataset_id} not found.")
+            raise DatasetNotFoundError(dataset_id)
 
         parquet_path = settings.PARQUET_DIR / f"{dataset_id}.parquet"
+        df: Optional[pd.DataFrame] = None
         if parquet_path.exists():
-            df = pd.read_parquet(parquet_path)
-        else:
-            raw_rows = await db.get_raw_rows(dataset_id)
-            if not raw_rows:
-                df = pd.DataFrame(columns=[
-                    "order_id", "transaction_date", "product_id", "product_name",
-                    "product_category", "region", "customer_identifier",
-                    "quantity", "unit_price", "revenue", "cost"
-                ])
-            else:
-                df = pd.DataFrame(raw_rows)
-            # Cache parquet
-            if not df.empty:
-                df.to_parquet(parquet_path, index=False)
+            try:
+                df = pd.read_parquet(parquet_path)
+            except Exception:  # corrupt cache / missing parquet engine: rebuild from the database
+                df = None
 
-        # Ensure correct column types
+        if df is None:
+            raw_rows = await db.get_raw_rows(dataset_id)
+            df = pd.DataFrame(raw_rows) if raw_rows else pd.DataFrame(columns=DATA_COLUMNS)
+            df = df.drop(columns=["raw_payload"], errors="ignore")
+            if not df.empty:
+                try:
+                    df.to_parquet(parquet_path, index=False)  # cache for next time
+                except Exception:
+                    pass
+
+        # Tolerate older/partial parquet files: every analytic below expects these columns.
+        for col_name in DATA_COLUMNS:
+            if col_name not in df.columns:
+                df[col_name] = None
+
         if not df.empty:
             df["revenue"] = pd.to_numeric(df["revenue"], errors="coerce").fillna(0.0)
             df["quantity"] = pd.to_numeric(df["quantity"], errors="coerce").fillna(1).astype(int)
-            if "cost" in df.columns:
-                df["cost"] = pd.to_numeric(df["cost"], errors="coerce")
+            df["unit_price"] = pd.to_numeric(df["unit_price"], errors="coerce").fillna(0.0)
+            df["cost"] = pd.to_numeric(df["cost"], errors="coerce")
             df["transaction_date"] = df["transaction_date"].astype(str).str[:10]
+            df["product_category"] = df["product_category"].fillna("General")
 
         return df, dataset
 
@@ -96,13 +124,11 @@ class AnalyticsService:
         if filters.regions and "region" in scoped.columns:
             scoped = scoped[scoped["region"].isin(filters.regions)]
 
-        all_dates = sorted(scoped["transaction_date"].dropna().unique())
-        if not all_dates:
-            min_date = "2026-01-01"
-            max_date = "2026-10-31"
-        else:
-            min_date = all_dates[0]
-            max_date = all_dates[-1]
+        # Anchor "last 30 days", "YTD" etc. on the whole dataset's date range, not on the
+        # category/region-filtered subset, so the time window does not move when a filter changes.
+        dataset_dates = df["transaction_date"].dropna()
+        min_date = str(dataset_dates.min())
+        max_date = str(dataset_dates.max())
 
         from_date = min_date
         to_date = max_date
@@ -117,8 +143,7 @@ class AnalyticsService:
         elif preset == "ytd":
             from_date = f"{max_date[:4]}-01-01"
         elif preset == "custom" and filters.date_from and filters.date_to:
-            from_date = filters.date_from
-            to_date = filters.date_to
+            from_date, to_date = sorted([filters.date_from[:10], filters.date_to[:10]])
 
         current_df = scoped[(scoped["transaction_date"] >= from_date) & (scoped["transaction_date"] <= to_date)].copy()
 
@@ -153,10 +178,15 @@ class AnalyticsService:
         cost = None
         profit = None
         margin = None
-        if has_cost and "cost" in df.columns and not df["cost"].isna().all():
-            cost = float(df["cost"].sum())
-            profit = revenue - cost
-            margin = (profit / revenue * 100.0) if revenue > 0 else 0.0
+        if has_cost and "cost" in df.columns:
+            # Profit/margin are computed only over rows that actually have a cost, so a few blank
+            # cells cannot inflate profit (revenue of ALL rows minus cost of SOME rows).
+            covered = df[df["cost"].notna()]
+            if not covered.empty:
+                covered_revenue = float(covered["revenue"].sum())
+                cost = float(covered["cost"].sum())
+                profit = covered_revenue - cost
+                margin = (profit / covered_revenue * 100.0) if covered_revenue > 0 else 0.0
 
         return {
             "revenue": revenue,
@@ -238,7 +268,7 @@ class AnalyticsService:
             return []
 
         df_copy = df.copy()
-        df_copy["bucket"] = df_copy["transaction_date"].apply(lambda d: bucket_key(d, group_by))
+        df_copy["bucket"] = bucket_series(df_copy["transaction_date"], group_by)
         points: List[TimeSeriesPoint] = []
 
         grouped = df_copy.groupby("bucket")
@@ -307,46 +337,51 @@ class AnalyticsService:
             return []
 
         total_rev = float(current_df["revenue"].sum())
-        cur_grouped = current_df.groupby(["product_id", "product_name", "product_category"]).agg(
+        # Group by id only: grouping by (id, name, category) could emit two rows with the same id,
+        # which breaks React keys and rankings in the UI.
+        cur_grouped = current_df.groupby("product_id", sort=False).agg(
+            name=("product_name", "first"),
+            category=("product_category", "first"),
             revenue=("revenue", "sum"),
             units=("quantity", "sum"),
             orders=("order_id", "nunique"),
-            cost=("cost", "sum") if (has_cost and "cost" in current_df.columns) else ("revenue", lambda x: np.nan)
-        ).reset_index()
+        )
+        if has_cost and "cost" in current_df.columns:
+            covered = current_df[current_df["cost"].notna()]
+            if not covered.empty:
+                cur_grouped = cur_grouped.join(
+                    covered.groupby("product_id").agg(cov_revenue=("revenue", "sum"), cov_cost=("cost", "sum"))
+                )
+        cur_grouped = cur_grouped.reset_index()
 
         prev_map = {}
         if previous_df is not None and not previous_df.empty:
-            p_grp = previous_df.groupby("product_id")["revenue"].sum()
-            prev_map = p_grp.to_dict()
+            prev_map = previous_df.groupby("product_id")["revenue"].sum().to_dict()
 
         out: List[ProductPerformance] = []
         for _, row in cur_grouped.iterrows():
             pid = str(row["product_id"])
-            pname = str(row["product_name"])
-            pcat = str(row["product_category"])
             rev = float(row["revenue"])
-            units = int(row["units"])
-            orders = int(row["orders"])
             share = (rev / total_rev * 100.0) if total_rev > 0 else 0.0
             prev_rev = prev_map.get(pid)
             chg = pct_change(rev, prev_rev) if prev_rev is not None else None
 
             margin = None
-            if has_cost and pd.notna(row["cost"]) and rev > 0:
-                cost_val = float(row["cost"])
-                margin = ((rev - cost_val) / rev) * 100.0
+            cov_rev = row.get("cov_revenue")
+            if cov_rev is not None and pd.notna(cov_rev) and cov_rev > 0:
+                margin = ((float(cov_rev) - float(row["cov_cost"])) / float(cov_rev)) * 100.0
 
             out.append(
                 ProductPerformance(
                     id=pid,
-                    name=pname,
-                    category=pcat,
+                    name=str(row["name"]),
+                    category=str(row["category"]),
                     revenue=round(rev, 2),
-                    units=units,
-                    orders=orders,
+                    units=int(row["units"]),
+                    orders=int(row["orders"]),
                     share=round(share, 1),
                     change=round(chg, 1) if chg is not None else None,
-                    margin=round(margin, 1) if margin is not None else None
+                    margin=round(margin, 1) if margin is not None else None,
                 )
             )
         out.sort(key=lambda x: x.revenue, reverse=True)
@@ -400,7 +435,7 @@ class AnalyticsService:
         cat_trend: List[CategoryTrendPoint] = []
         if not cur_df.empty:
             cur_copy = cur_df.copy()
-            cur_copy["bucket"] = cur_copy["transaction_date"].apply(lambda d: bucket_key(d, filters.group_by))
+            cur_copy["bucket"] = bucket_series(cur_copy["transaction_date"], filters.group_by)
             pivoted = cur_copy.pivot_table(index="bucket", columns="product_category", values="revenue", aggfunc="sum").fillna(0.0)
             for b_date, row in pivoted.iterrows():
                 cat_trend.append(CategoryTrendPoint(date=str(b_date), values={str(k): round(float(v), 2) for k, v in row.items()}))
@@ -502,7 +537,7 @@ class AnalyticsService:
 
         # New vs Returning time series
         cur_df_copy = cur_df.copy()
-        cur_df_copy["bucket"] = cur_df_copy["transaction_date"].apply(lambda d: bucket_key(d, filters.group_by))
+        cur_df_copy["bucket"] = bucket_series(cur_df_copy["transaction_date"], filters.group_by)
         new_vs_returning: List[NewVsReturningPoint] = []
 
         for bucket, b_df in sorted(cur_df_copy.groupby("bucket"), key=lambda x: x[0]):
@@ -523,7 +558,7 @@ class AnalyticsService:
         ]
         bin_counts = [0] * 6
         for o_count in cur_cust_grp["orders"]:
-            idx = min(o_count, 6) - 1
+            idx = min(max(int(o_count), 1), 6) - 1
             bin_counts[idx] += 1
         frequency = [FrequencyBin(label=bins_data[i][0], count=bin_counts[i]) for i in range(6)]
 
@@ -616,22 +651,22 @@ class AnalyticsService:
                 label="Profit margin",
                 value=round(cur_tot["margin"] or 0.0, 1),
                 format="percent",
-                change=round((cur_tot["margin"] - prev_tot["margin"]), 1) if (prev_tot and prev_tot.get("margin") is not None) else None,
+                change=round((cur_tot["margin"] - prev_tot["margin"]), 1) if (cur_tot.get("margin") is not None and prev_tot and prev_tot.get("margin") is not None) else None,
                 hint="Change in percentage points"
             )
         ]
 
         trend = cls.build_timeseries(cur_df, filters.group_by, has_cost=True)
 
-        # Margins by category
+        # Margins by category (only rows that have a cost, consistent with calculate_totals)
         cat_margins: List[BreakdownItem] = []
-        if not cur_df.empty:
-            grp = cur_df.groupby("product_category").agg({"revenue": "sum", "cost": "sum"}).reset_index()
-            tot_profit = float((cur_df["revenue"] - cur_df["cost"]).sum())
+        covered = cur_df[cur_df["cost"].notna()] if not cur_df.empty else cur_df
+        if not covered.empty:
+            grp = covered.groupby("product_category").agg({"revenue": "sum", "cost": "sum"}).reset_index()
+            tot_profit = float((covered["revenue"] - covered["cost"]).sum())
             for _, r in grp.iterrows():
                 r_rev = float(r["revenue"])
-                r_cost = float(r["cost"])
-                r_profit = r_rev - r_cost
+                r_profit = r_rev - float(r["cost"])
                 r_margin = (r_profit / r_rev * 100.0) if r_rev > 0 else 0.0
                 r_share = (r_profit / tot_profit * 100.0) if tot_profit > 0 else 0.0
                 cat_margins.append(
@@ -639,7 +674,7 @@ class AnalyticsService:
                         name=str(r["product_category"]),
                         value=round(r_margin, 1),
                         share=round(r_share, 1),
-                        secondary=round(r_profit, 2)
+                        secondary=round(r_profit, 2),
                     )
                 )
             cat_margins.sort(key=lambda x: x.value, reverse=True)
@@ -657,10 +692,12 @@ class AnalyticsService:
     async def get_explorer_data(
         cls,
         dataset_id: str,
-        limit: int = 200,
+        limit: Optional[int] = None,
         offset: int = 0,
-        sort_by: Optional[str] = None
+        sort_by: Optional[str] = None,
     ) -> ExplorerData:
+        """`limit=None` returns every row (up to settings.MAX_EXPLORER_ROWS). The frontend explorer
+        sorts, filters and paginates client-side, so a small default would silently hide data."""
         df, dataset = await cls.load_dataframe(dataset_id)
         caps = dataset.get("capabilities", {})
 
@@ -685,33 +722,33 @@ class AnalyticsService:
         if df.empty:
             return ExplorerData(columns=columns, rows=[], total=0)
 
-        # Map internal column names to Explorer keys
-        rows_df = df.copy()
-        if sort_by and sort_by in rows_df.columns:
-            rows_df = rows_df.sort_values(by=sort_by, ascending=False)
-        else:
-            rows_df = rows_df.sort_values(by="transaction_date", ascending=False)
+        sort_col = EXPLORER_SORT_COLUMNS.get(sort_by or "", sort_by)
+        if not sort_col or sort_col not in df.columns:
+            sort_col = "transaction_date"
+        rows_df = df.sort_values(by=sort_col, ascending=False, kind="stable")
 
         total_rows = len(rows_df)
-        paged_df = rows_df.iloc[offset:offset+limit]
+        cap = settings.MAX_EXPLORER_ROWS
+        effective_limit = cap if limit is None else min(limit, cap)
+        page = rows_df.iloc[offset: offset + effective_limit]
 
-        explorer_rows: List[Dict[str, Any]] = []
-        for _, r in paged_df.iterrows():
-            item = {
-                "orderId": r.get("order_id"),
-                "date": r.get("transaction_date"),
-                "product": r.get("product_name"),
-                "category": r.get("product_category"),
-                "quantity": int(r.get("quantity", 1)),
-                "unitPrice": round(float(r.get("unit_price", 0.0)), 2),
-                "revenue": round(float(r.get("revenue", 0.0)), 2),
-            }
-            if caps.get("regions"):
-                item["region"] = r.get("region")
-            if caps.get("customers"):
-                item["customerId"] = r.get("customer_identifier")
-            if caps.get("cost") and pd.notna(r.get("cost")):
-                item["cost"] = round(float(r["cost"]), 2)
-            explorer_rows.append(item)
+        view = pd.DataFrame({
+            "orderId": page["order_id"],
+            "date": page["transaction_date"],
+            "product": page["product_name"],
+            "category": page["product_category"],
+            "quantity": page["quantity"].astype(int),
+            "unitPrice": page["unit_price"].round(2),
+            "revenue": page["revenue"].round(2),
+        })
+        if caps.get("regions"):
+            view["region"] = page["region"]
+        if caps.get("customers"):
+            view["customerId"] = page["customer_identifier"]
+        if caps.get("cost"):
+            view["cost"] = page["cost"].round(2)
 
-        return ExplorerData(columns=columns, rows=explorer_rows, total=total_rows)
+        ordered = [c.key for c in columns]
+        view = view[ordered].astype(object)
+        view = view.where(view.notna(), None)  # NaN -> null (valid JSON)
+        return ExplorerData(columns=columns, rows=view.to_dict("records"), total=total_rows)
