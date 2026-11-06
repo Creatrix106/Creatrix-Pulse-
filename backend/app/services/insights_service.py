@@ -167,30 +167,36 @@ class InsightsService:
                         )
                     )
 
-        # 5. Anomaly Detection (Weekly Z-Score)
+        # 5. Anomaly Detection (weekly z-score)
+        # Same rule as the frontend reference: the first and last week of the window are usually
+        # partial (they would always look like a "drop"), so they are excluded, and at least
+        # 8 full weeks are required before a week can be called unusual.
         temp_df = current_df.copy()
         temp_df["dt"] = pd.to_datetime(temp_df["transaction_date"])
-        temp_df["week"] = temp_df["dt"].dt.to_period("W").apply(lambda r: r.start_time.strftime("%Y-%m-%d"))
-        weekly_rev = temp_df.groupby("week")["revenue"].sum()
+        temp_df["week"] = (temp_df["dt"] - pd.to_timedelta(temp_df["dt"].dt.weekday, unit="D")).dt.strftime("%Y-%m-%d")
+        weekly_rev = temp_df.groupby("week")["revenue"].sum().sort_index()
+        if len(weekly_rev) >= 3:
+            weekly_rev = weekly_rev.iloc[1:-1]
 
-        if len(weekly_rev) >= 4:
+        if len(weekly_rev) >= 8:
             mean_rev = float(weekly_rev.mean())
-            std_rev = float(weekly_rev.std())
-            if std_rev > 0:
+            std_rev = float(weekly_rev.std(ddof=0))
+            if std_rev > 0 and mean_rev > 0:
                 z_scores = ((weekly_rev - mean_rev) / std_rev).abs()
                 max_week = z_scores.idxmax()
                 max_z = float(z_scores[max_week])
-                if max_z >= 1.8:
+                if max_z >= 2.0:
                     week_val = float(weekly_rev[max_week])
                     dev_pct = ((week_val - mean_rev) / mean_rev) * 100.0
                     spike_or_drop = "spike" if dev_pct > 0 else "drop"
+                    week_label = pd.Timestamp(max_week).strftime("%d %b %Y").lstrip("0")
                     insights.append(
                         Insight(
                             id="anomaly-week",
                             type="anomaly",
                             metric="revenue",
-                            title=f"Unusual {spike_or_drop} in the week of {max_week}",
-                            summary=f"Weekly revenue was {abs(dev_pct):.0f}% {'above' if dev_pct > 0 else 'below'} the typical week. Check campaigns, outages or data-entry issues.",
+                            title=f"Unusual {spike_or_drop} in the week of {week_label}",
+                            summary=f"Weekly revenue was {abs(dev_pct):.0f}% {'above' if dev_pct > 0 else 'below'} the typical week. Check campaigns, outages or data-entry issues for that week.",
                             evidence=[
                                 InsightEvidence(label="Revenue that week", value=format_currency(week_val)),
                                 InsightEvidence(label="Typical week", value=format_currency(mean_rev)),
@@ -241,7 +247,7 @@ class InsightsService:
 
         # 7. Low Margin Alert
         if has_cost and "cost" in current_df.columns and not current_df["cost"].isna().all():
-            cat_costs = current_df.groupby("product_category").agg({"revenue": "sum", "cost": "sum"})
+            cat_costs = current_df[current_df["cost"].notna()].groupby("product_category").agg({"revenue": "sum", "cost": "sum"})
             cat_costs["margin"] = np.where(cat_costs["revenue"] > 0, (cat_costs["revenue"] - cat_costs["cost"]) / cat_costs["revenue"] * 100.0, 0.0)
             cat_costs = cat_costs.sort_values(by="margin")
             if not cat_costs.empty:
@@ -262,13 +268,13 @@ class InsightsService:
                     )
                 )
 
-        # 8. Customer Repeat Rate
+        # 8. Customer Repeat Rate (a "repeat" customer has 2+ distinct orders, not 2+ line items)
         if has_customers and "customer_identifier" in current_df.columns:
-            cust_series = current_df["customer_identifier"].dropna()
-            if not cust_series.empty:
-                cust_order_counts = cust_series.value_counts()
-                total_cust = len(cust_order_counts)
-                repeat_cust = int((cust_order_counts > 1).sum())
+            with_customer = current_df.dropna(subset=["customer_identifier"])
+            if not with_customer.empty:
+                orders_per_customer = with_customer.groupby("customer_identifier")["order_id"].nunique()
+                total_cust = len(orders_per_customer)
+                repeat_cust = int((orders_per_customer > 1).sum())
                 if total_cust > 0:
                     rep_rate = (repeat_cust / total_cust) * 100.0
                     insights.append(

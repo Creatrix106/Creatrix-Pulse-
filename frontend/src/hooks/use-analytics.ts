@@ -5,6 +5,7 @@ import { analyticsService } from "@/services/analytics.service";
 import type { AnalyticsFilters } from "@/types/filters";
 import { useAnalyticsFilters } from "./use-analytics-filters";
 import { useDatasetId } from "./use-dataset-id";
+import { useAuthStore } from "@/stores/auth.store";
 
 /**
  * One hook per analytics endpoint. The dataset id (from the route) and the global
@@ -12,11 +13,13 @@ import { useDatasetId } from "./use-dataset-id";
  */
 function useAnalyticsQuery<T>(name: string, fetcher: (datasetId: string, filters: AnalyticsFilters) => Promise<T>) {
   const datasetId = useDatasetId();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   const filters = useAnalyticsFilters();
   return useQuery({
-    queryKey: ["analytics", datasetId, name, filters],
+    queryKey: ["analytics", userId, datasetId, name, filters],
     queryFn: () => fetcher(datasetId, filters),
     placeholderData: keepPreviousData,
+    enabled: Boolean(userId && datasetId),
   });
 }
 
@@ -29,8 +32,10 @@ export const useInsightsQuery = () => useAnalyticsQuery("insights", (id, f) => a
 
 export function useExplorerQuery() {
   const datasetId = useDatasetId();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
   return useQuery({
-    queryKey: ["analytics", datasetId, "explorer"],
+    queryKey: ["analytics", userId, datasetId, "explorer"],
     queryFn: () => analyticsService.getExplorerData(datasetId),
+    enabled: Boolean(userId && datasetId),
   });
 }

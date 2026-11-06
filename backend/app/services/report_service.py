@@ -5,6 +5,7 @@ import uuid
 import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
+from xml.sax.saxutils import escape
 
 import pandas as pd
 from reportlab.lib.pagesizes import letter
@@ -14,6 +15,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
 from app.config import settings
+from app.core.compat import model_to_dict
 from app.db.database import db
 from app.schemas.report import ReportConfig, ReportPreview, ReportRecord, ReportSummaryItem, ReportColumn
 from app.schemas.filters import AnalyticsFilters
@@ -27,6 +29,19 @@ METRIC_LABELS = {
     "cost": ("Cost", "currency"),
     "profit": ("Gross profit", "currency"),
 }
+
+DATE_PRESET_LABELS = {
+    "all": "All time",
+    "last_30d": "Last 30 days",
+    "last_90d": "Last 90 days",
+    "last_180d": "Last 180 days",
+    "ytd": "Year to date",
+    "custom": "Custom range",
+}
+
+# Helvetica (the built-in PDF font) has no rupee glyph; "₹" would render as a black box.
+PDF_CURRENCY_PREFIX = "Rs. "
+
 
 class ReportService:
     @classmethod
@@ -87,7 +102,7 @@ class ReportService:
         size_bytes = 0
 
         if fmt == "json":
-            content = json.dumps(preview.dict(), indent=2)
+            content = json.dumps(model_to_dict(preview), indent=2)
             size_bytes = len(content.encode("utf-8"))
             file_path = str(settings.REPORTS_DIR / f"{report_id}.json")
             with open(file_path, "w", encoding="utf-8") as f:
@@ -111,7 +126,7 @@ class ReportService:
             for r in preview.rows:
                 row_dict = {c.label: r.get(c.key, "") for c in preview.columns}
                 rows_data.append(row_dict)
-            rep_df = pd.DataFrame(rows_data)
+            rep_df = pd.DataFrame(rows_data, columns=[c.label for c in preview.columns])
             rep_df.to_excel(file_path, index=False, engine="openpyxl")
             size_bytes = Path(file_path).stat().st_size
 
@@ -126,9 +141,9 @@ class ReportService:
             "id": report_id,
             "dataset_id": dataset_id,
             "user_id": user_id,
-            "title": f"{config.title} ({config.datePreset})",
+            "title": f"{config.title} ({DATE_PRESET_LABELS.get(config.datePreset, config.datePreset)})",
             "format": fmt,
-            "parameters": config.dict(),
+            "parameters": model_to_dict(config),
             "row_count": len(preview.rows),
             "file_size_bytes": size_bytes,
             "file_path": file_path,
@@ -186,7 +201,7 @@ class ReportService:
 
         elements = []
         # Title & Meta
-        elements.append(Paragraph(f"<b>Creatrix Pulse</b> — {preview.title}", title_style))
+        elements.append(Paragraph(f"<b>Creatrix Pulse</b> — {escape(preview.title)}", title_style))
         elements.append(Spacer(1, 6))
         meta_text = f"Generated at: {preview.generatedAt[:19].replace('T', ' ')} UTC | Period: {preview.period.get('from')} to {preview.period.get('to')}"
         elements.append(Paragraph(meta_text, meta_style))
@@ -195,8 +210,8 @@ class ReportService:
         # KPI Summary Cards in Table
         kpi_cells = []
         for s in preview.summary:
-            fmt_val = f"₹{s.value:,.2f}" if s.format == "currency" else f"{s.value:,.0f}"
-            cell = [Paragraph(s.label.upper(), kpi_label_style), Paragraph(fmt_val, kpi_val_style)]
+            fmt_val = f"{PDF_CURRENCY_PREFIX}{s.value:,.2f}" if s.format == "currency" else f"{s.value:,.0f}"
+            cell = [Paragraph(escape(s.label.upper()), kpi_label_style), Paragraph(fmt_val, kpi_val_style)]
             kpi_cells.append(cell)
 
         if kpi_cells:
@@ -231,7 +246,7 @@ class ReportService:
             for c in preview.columns:
                 v = r.get(c.key, "")
                 if c.format == "currency":
-                    row_items.append(f"₹{float(v):,.2f}")
+                    row_items.append(f"{PDF_CURRENCY_PREFIX}{float(v):,.2f}")
                 elif c.format == "number":
                     row_items.append(f"{float(v):,.0f}")
                 else:

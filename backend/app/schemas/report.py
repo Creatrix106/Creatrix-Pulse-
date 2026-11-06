@@ -1,12 +1,14 @@
 from typing import List, Optional, Dict, Any, Literal
 from pydantic import BaseModel, Field
 
+from app.schemas.filters import DatePreset
+
 ReportFormat = Literal["csv", "json", "xlsx", "pdf"]
 
 class ReportConfig(BaseModel):
-    title: str
+    title: str = Field(..., min_length=1, max_length=200)
     metrics: List[str]
-    datePreset: str
+    datePreset: DatePreset  # unknown presets are rejected with 422 instead of crashing later
     format: ReportFormat = "csv"
 
 class ReportSummaryItem(BaseModel):

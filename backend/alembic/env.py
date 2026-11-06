@@ -15,6 +15,11 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# The migrations (JSONB etc.) target PostgreSQL. Use DATABASE_URL when it is a Postgres URL;
+# otherwise fall back to the URL in alembic.ini. (The running API itself uses SQLite.)
+if settings.DATABASE_URL.startswith("postgresql"):
+    config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
