@@ -9,14 +9,14 @@ import { apiClient } from "./api-client";
  *   GET  /auth/me                          -> User   (401 when signed out)
  */
 export interface AuthService {
-  me(): Promise<User>;
+  me(signal?: AbortSignal): Promise<User>;
   login(payload: LoginPayload): Promise<User>;
   register(payload: RegisterPayload): Promise<User>;
   logout(): Promise<void>;
 }
 
 const httpAuthService: AuthService = {
-  me: () => apiClient.get<User>("/auth/me"),
+  me: (signal) => apiClient.get<User>("/auth/me", { signal }),
   login: (payload) => apiClient.post<User>("/auth/login", payload),
   register: (payload) => apiClient.post<User>("/auth/register", payload),
   logout: () => apiClient.post<void>("/auth/logout"),

@@ -1,7 +1,9 @@
 # Creatrix Pulse backend integration
 
-The frontend calls the FastAPI backend through `src/services/*.service.ts` and `src/services/api-client.ts`.
-Configure `NEXT_PUBLIC_API_BASE_URL` as the backend root (default `/api`). Requests include credentials for the httpOnly session cookie.
+The frontend calls the backend through `src/services/*.service.ts` and `src/services/api-client.ts`.
+Configure `NEXT_PUBLIC_API_BASE_URL` at build time as the backend root (default `/api`, for a same-origin reverse proxy). For a separate API host, use its HTTPS origin and API prefix, such as `https://api.example.com/v1`.
+
+`NEXT_PUBLIC_API_BASE_URL` is included in browser code. It must contain only the public API URL; never put credentials, tokens, or other secrets in any `NEXT_PUBLIC_` variable. Requests include credentials for the httpOnly session cookie. Cross-origin deployments must configure the backend to allow the exact frontend origin with credentials and set the session cookie attributes for the deployment (including `Secure` on HTTPS and a compatible `SameSite` policy).
 
 Errors are expected as `{ "code": string, "message": string, "details"?: unknown }` with an appropriate HTTP status.
 

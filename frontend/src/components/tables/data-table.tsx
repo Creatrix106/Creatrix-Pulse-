@@ -32,6 +32,7 @@ interface DataTableProps<T> {
   toolbar?: ReactNode;
   emptyMessage?: string;
   className?: string;
+  serverPagination?: { page: number; pageCount: number; total: number; onPageChange: (page: number) => void; onCriteriaChange?: () => void };
 }
 
 /** Generic table: search, column filters, sorting, column visibility, pagination, row click and export. */
@@ -48,6 +49,7 @@ export function DataTable<T>({
   toolbar,
   emptyMessage = "No rows match your search or filters.",
   className,
+  serverPagination,
 }: DataTableProps<T>) {
   const t = useTableState({ data, columns, pageSize, initialSort });
   const filterable = columns.filter((c) => c.filterable !== false);
@@ -67,7 +69,7 @@ export function DataTable<T>({
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex flex-wrap items-center gap-2">
-        {searchable && <SearchInput value={t.search} onChange={t.setSearch} placeholder="Search all columns…" label={`Search ${caption}`} className="w-full sm:w-72" />}
+        {searchable && <SearchInput value={t.search} onChange={(value) => { t.setSearch(value); serverPagination?.onCriteriaChange?.(); }} placeholder="Search all columns…" label={`Search ${caption}`} className="w-full sm:w-72" />}
         <div className="ml-auto flex flex-wrap items-center gap-2">
           {toolbar}
           <Popover
@@ -82,10 +84,10 @@ export function DataTable<T>({
           >
             <div className="space-y-3">
               {filterable.map((c) => (
-                <ColumnFilter key={c.key} column={c} value={t.filters[c.key] ?? {}} onChange={(v) => t.setFilter(c.key, v)} />
+                <ColumnFilter key={c.key} column={c} value={t.filters[c.key] ?? {}} onChange={(v) => { t.setFilter(c.key, v); serverPagination?.onCriteriaChange?.(); }} />
               ))}
               {t.activeFilterCount > 0 && (
-                <Button size="sm" variant="ghost" onClick={t.clearFilters} className="w-full">Clear all filters</Button>
+                <Button size="sm" variant="ghost" onClick={() => { t.clearFilters(); serverPagination?.onCriteriaChange?.(); }} className="w-full">Clear all filters</Button>
               )}
             </div>
           </Popover>
@@ -112,7 +114,7 @@ export function DataTable<T>({
                     {c.sortable === false ? (
                       c.header
                     ) : (
-                      <button type="button" onClick={() => t.toggleSort(c.key)} className="inline-flex items-center gap-1 uppercase hover:text-foreground">
+                      <button type="button" onClick={() => { t.toggleSort(c.key); serverPagination?.onCriteriaChange?.(); }} className="inline-flex items-center gap-1 uppercase hover:text-foreground">
                         {c.header}
                         <SortIcon className={cn("size-3.5", !sorted && "opacity-50")} aria-hidden />
                       </button>
@@ -143,7 +145,7 @@ export function DataTable<T>({
         {t.total === 0 && <EmptyState title="Nothing to show" description={emptyMessage} className="rounded-none border-0" />}
       </div>
 
-      <Pagination page={t.page} pageCount={t.pageCount} pageSize={t.pageSize} total={t.total} onPageChange={t.setPage} onPageSizeChange={t.setPageSize} />
+      <Pagination page={serverPagination?.page ?? t.page} pageCount={serverPagination?.pageCount ?? t.pageCount} pageSize={t.pageSize} total={serverPagination?.total ?? t.total} onPageChange={serverPagination?.onPageChange ?? t.setPage} onPageSizeChange={serverPagination ? undefined : t.setPageSize} />
     </div>
   );
 }

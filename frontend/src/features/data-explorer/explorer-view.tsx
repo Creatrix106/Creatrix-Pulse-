@@ -9,12 +9,13 @@ import { RowDetailsDrawer } from "@/components/tables/row-details-drawer";
 import { useExplorerQuery } from "@/hooks/use-analytics";
 import { useFormatters } from "@/hooks/use-formatters";
 import { usePreferencesStore } from "@/stores/preferences.store";
+import { useDatasetId } from "@/hooks/use-dataset-id";
+import { useAuthStore } from "@/stores/auth.store";
 import type { ExplorerData, ExplorerRow } from "@/types/analytics";
 import type { TableColumn } from "@/types/table";
 
-function ExplorerContent({ data }: { data: ExplorerData }) {
+function ExplorerContent({ data, page, pageSize, onPageChange }: { data: ExplorerData; page: number; pageSize: number; onPageChange: (page: number) => void }) {
   const f = useFormatters();
-  const pageSize = usePreferencesStore((s) => s.pageSize);
   const [selected, setSelected] = useState<ExplorerRow | null>(null);
 
   const columns = useMemo<TableColumn<ExplorerRow>[]>(
@@ -50,6 +51,7 @@ function ExplorerContent({ data }: { data: ExplorerData }) {
         getRowId={(row, i) => String(row.orderId ?? i)}
         caption="Dataset records"
         pageSize={pageSize}
+        serverPagination={{ page, pageCount: Math.max(1, Math.ceil(data.total / pageSize)), total: data.total, onPageChange, onCriteriaChange: () => onPageChange(0) }}
         onRowClick={setSelected}
         initialSort={{ key: "date", direction: "desc" }}
       />
@@ -58,11 +60,19 @@ function ExplorerContent({ data }: { data: ExplorerData }) {
   );
 }
 
-export function ExplorerView() {
-  const query = useExplorerQuery();
+function ExplorerPage({ pageSize }: { pageSize: number }) {
+  const [page, setPage] = useState(0);
+  const query = useExplorerQuery(page, pageSize);
   return (
     <QueryBoundary query={query} loading={<TableSkeleton rows={10} columns={7} />}>
-      {(data) => <ExplorerContent data={data} />}
+      {(data) => <ExplorerContent data={data} page={page} pageSize={pageSize} onPageChange={setPage} />}
     </QueryBoundary>
   );
+}
+
+export function ExplorerView() {
+  const datasetId = useDatasetId();
+  const userId = useAuthStore((s) => s.user?.id ?? null);
+  const pageSize = usePreferencesStore((s) => s.pageSize);
+  return <ExplorerPage key={`${userId ?? "signed-out"}:${datasetId}:${pageSize}`} pageSize={pageSize} />;
 }

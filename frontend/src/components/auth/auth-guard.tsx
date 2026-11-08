@@ -11,13 +11,14 @@ export function AuthGuard({ children }: { children: ReactNode }) {
   const router = useRouter();
   const session = useCurrentUser();
   const unauthorized = isApiError(session.error) && session.error.status === 401;
+  const shouldRedirect = unauthorized || (!session.isPending && !session.isError && !session.data);
 
   useEffect(() => {
     const redirect = () => router.replace("/login");
     window.addEventListener("creatrix:unauthorized", redirect);
-    if (unauthorized) redirect();
+    if (shouldRedirect) redirect();
     return () => window.removeEventListener("creatrix:unauthorized", redirect);
-  }, [router, unauthorized]);
+  }, [router, shouldRedirect]);
 
   if (session.isPending || unauthorized) return <PageSkeleton />;
   if (session.isError) {

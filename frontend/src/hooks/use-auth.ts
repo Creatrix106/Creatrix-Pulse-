@@ -23,9 +23,9 @@ export function useCurrentUser() {
   const setUser = useAuthStore((s) => s.setUser);
   return useQuery({
     queryKey: authKey,
-    queryFn: async () => {
+    queryFn: async ({ signal }) => {
       try {
-        const user = await authService.me();
+        const user = await authService.me(signal);
         const previous = useAuthStore.getState().user;
         if (previous && !sameIdentity(previous, user)) await clearPrivateCache(queryClient);
         setUser(user);
@@ -48,6 +48,7 @@ export function useLogin() {
   const setUser = useAuthStore((s) => s.setUser);
   return useMutation({
     mutationFn: authService.login,
+    onMutate: () => queryClient.cancelQueries({ queryKey: authKey, exact: true }),
     onSuccess: async (user) => {
       const previous = useAuthStore.getState().user;
       if (!sameIdentity(previous, user)) await clearPrivateCache(queryClient);
@@ -62,6 +63,7 @@ export function useRegister() {
   const setUser = useAuthStore((s) => s.setUser);
   return useMutation({
     mutationFn: authService.register,
+    onMutate: () => queryClient.cancelQueries({ queryKey: authKey, exact: true }),
     onSuccess: async (user) => {
       await clearPrivateCache(queryClient);
       setUser(user);
@@ -75,6 +77,7 @@ export function useLogout() {
   const setUser = useAuthStore((s) => s.setUser);
   return useMutation({
     mutationFn: authService.logout,
+    onMutate: () => queryClient.cancelQueries({ queryKey: authKey, exact: true }),
     onSettled: async () => {
       // Even if the server is unreachable, stop displaying data from the signed-out UI.
       await clearPrivateCache(queryClient);

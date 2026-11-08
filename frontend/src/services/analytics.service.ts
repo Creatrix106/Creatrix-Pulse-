@@ -21,7 +21,7 @@ import { apiClient } from "./api-client";
  *   GET /datasets/:id/analytics/customers  -> CustomersResponse  (available:false when no customer column)
  *   GET /datasets/:id/analytics/finance    -> FinanceResponse    (available:false when no cost column)
  *   GET /datasets/:id/analytics/insights   -> Insight[]          (computed by the backend, never by the UI)
- *   GET /datasets/:id/records              -> ExplorerData       (switch to server-side paging when datasets grow)
+ *   GET /datasets/:id/records?limit=&offset= -> ExplorerData
  */
 export interface AnalyticsService {
   getOverview(datasetId: string, filters: AnalyticsFilters): Promise<OverviewData>;
@@ -30,7 +30,7 @@ export interface AnalyticsService {
   getCustomers(datasetId: string, filters: AnalyticsFilters): Promise<CustomersResponse>;
   getFinance(datasetId: string, filters: AnalyticsFilters): Promise<FinanceResponse>;
   getInsights(datasetId: string, filters: AnalyticsFilters): Promise<Insight[]>;
-  getExplorerData(datasetId: string): Promise<ExplorerData>;
+  getExplorerData(datasetId: string, limit: number, offset: number, signal?: AbortSignal): Promise<ExplorerData>;
 }
 
 function toQuery(filters: AnalyticsFilters) {
@@ -54,7 +54,7 @@ const httpAnalyticsService: AnalyticsService = {
   getCustomers: (id, f) => apiClient.get<CustomersResponse>(`${base(id)}/analytics/customers`, { query: toQuery(f) }),
   getFinance: (id, f) => apiClient.get<FinanceResponse>(`${base(id)}/analytics/finance`, { query: toQuery(f) }),
   getInsights: (id, f) => apiClient.get<Insight[]>(`${base(id)}/analytics/insights`, { query: toQuery(f) }),
-  getExplorerData: (id) => apiClient.get<ExplorerData>(`${base(id)}/records`),
+  getExplorerData: (id, limit, offset, signal) => apiClient.get<ExplorerData>(`${base(id)}/records`, { query: { limit, offset }, signal }),
 };
 
 export const analyticsService: AnalyticsService = httpAnalyticsService;

@@ -30,12 +30,12 @@ export const useCustomersQuery = () => useAnalyticsQuery("customers", (id, f) =>
 export const useFinanceQuery = () => useAnalyticsQuery("finance", (id, f) => analyticsService.getFinance(id, f));
 export const useInsightsQuery = () => useAnalyticsQuery("insights", (id, f) => analyticsService.getInsights(id, f));
 
-export function useExplorerQuery() {
+export function useExplorerQuery(page: number, pageSize: number) {
   const datasetId = useDatasetId();
   const userId = useAuthStore((s) => s.user?.id ?? null);
   return useQuery({
-    queryKey: ["analytics", userId, datasetId, "explorer"],
-    queryFn: () => analyticsService.getExplorerData(datasetId),
+    queryKey: ["analytics", userId, datasetId, "explorer", page, pageSize],
+    queryFn: ({ signal }) => analyticsService.getExplorerData(datasetId, pageSize, page * pageSize, signal),
     enabled: Boolean(userId && datasetId),
   });
 }

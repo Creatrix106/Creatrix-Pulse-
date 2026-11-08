@@ -116,6 +116,8 @@ export type ExplorerRow = Record<string, string | number | null>;
 export interface ExplorerData {
   columns: ExplorerColumn[];
   rows: ExplorerRow[];
+  /** Total rows matching the request, supplied by the records endpoint. */
+  total: number;
 }
 
 export type CustomersResponse = Capability<CustomersData>;
